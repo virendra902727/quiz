@@ -3,27 +3,12 @@ from pyrogram.types import Message
 import os
 import random
 import asyncio
-from flask import Flask
-import threading
 
-# 🌐 Env Vars
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 app = Client("quiz_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-
-# 🌐 Flask for Render keep alive
-flask_app = Flask(__name__)
-
-@flask_app.route("/")
-def home():
-    return "✅ Quiz Bot is Live!"
-
-def run_flask():
-    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
-threading.Thread(target=run_flask).start()
 
 # ✅ Load word dictionary
 with open("words.txt", "r", encoding="utf-8") as f:
@@ -32,7 +17,7 @@ with open("words.txt", "r", encoding="utf-8") as f:
 game_sessions = {}  # {chat_id: session_data}
 
 # 🎮 Start quiz
-@app.on_message(filters.command("quizstart") & filters.group)
+@app.on_message(filters.command("quiz") & filters.group)
 async def start_game(client, message: Message):
     chat_id = message.chat.id
     if chat_id in game_sessions and game_sessions[chat_id]["active"]:
@@ -45,10 +30,38 @@ async def start_game(client, message: Message):
         "scores": {},
         "turn": 0,
         "letter": "",
-        "current_player": None
+        "current_player": None,
+        "waiting_to_start": True
     }
 
-    await message.reply("🎉 *Word Quiz Game Start!* 🎲\n\nSabhi log *join* likhkar game me shamil ho jaayein! Minimum 2 players required.\nGame start karne ke liye `/go` likhiye.", quote=True)
+    await message.reply(
+        "🎉 *Word Quiz Game Start!* 🎲\n\nSabhi log *join* likhkar game me shamil ho jaayein! Minimum 2 players required.\n30 sec me game auto-start ho jaayega agar 2 ya usse zyada players ho gaye.\n📜 Rules padhne ke liye /rules likhein.",
+        quote=True
+    )
+
+    await asyncio.sleep(30)
+    session = game_sessions.get(chat_id)
+    if session and session["waiting_to_start"] and len(session["players"]) >= 2:
+        session["waiting_to_start"] = False
+        await begin_round(client, message)
+    elif session:
+        await client.send_message(chat_id, "⏳ Players kam hain. Game abhi start nahi ho sakta. /quiz se dobara try karein.")
+        del game_sessions[chat_id]
+
+# 📜 Rules
+@app.on_message(filters.command("rules") & filters.group)
+async def show_rules(client, message):
+    rules = (
+        "📜 *Word Quiz Game Rules* 🎲\n\n"
+        "1️⃣ Bot ek random letter choose karega aapke turn ke liye.\n"
+        "2️⃣ Aapko us letter se start hone wala *valid English word* likhna hoga (kam se kam 4 letters ka).\n"
+        "3️⃣ Aapke paas 20 seconds honge jawab dene ke liye.\n"
+        "4️⃣ Sahi jawab par aapko 1 point milega.\n"
+        "5️⃣ Game me sabki baari aati hai round-robin mein.\n"
+        "6️⃣ Winner ko sabke saamne declare kiya jaata hai! 🏆\n\n"
+        "📝 Game start karne ke liye: /quiz"
+    )
+    await message.reply(rules)
 
 # ➕ Join game
 @app.on_message(filters.text & filters.group & filters.regex("(?i)^join$"))
@@ -68,7 +81,7 @@ async def join_game(client, message: Message):
     else:
         await message.reply("⏳ Aap already game me ho.")
 
-# ▶ Start Round
+# ▶ Start Round (manually)
 @app.on_message(filters.command("go") & filters.group)
 async def begin_round(client, message: Message):
     chat_id = message.chat.id
@@ -81,6 +94,7 @@ async def begin_round(client, message: Message):
         await message.reply("👥 Kam se kam 2 players chahiye game ke liye.")
         return
 
+    session["waiting_to_start"] = False
     await next_turn(client, chat_id)
 
 # 🔁 Next Player Turn
@@ -101,7 +115,6 @@ async def next_turn(client, chat_id):
             f"✏️ *{user.first_name}*, it's your turn!\nSend a valid word starting with **{letter.upper()}** (within 20 sec)..."
         )
 
-        # Timer
         await asyncio.sleep(20)
 
         if session["current_player"] == user_id:
@@ -164,7 +177,7 @@ async def end_game(client, message: Message):
     winner = max(scores, key=scores.get, default=None)
     if winner:
         user = await client.get_users(winner)
-        await message.reply(f"\ud83c\udfc6 *Game Over!*\n\nCongratulations {user.first_name} \ud83c\udf89 with {scores[winner]} points!")
+        await message.reply(f"🏆 *Game Over!*\n\nCongratulations {user.first_name} 🎉 with {scores[winner]} points!")
     else:
         await message.reply("Game khatam hua. Koi winner nahi bana.")
 
