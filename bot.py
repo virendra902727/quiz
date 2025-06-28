@@ -3,12 +3,27 @@ from pyrogram.types import Message
 import os
 import random
 import asyncio
+from flask import Flask
+import threading
 
+# 🌐 Env Vars
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 app = Client("quiz_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+
+# 🌐 Flask for Render keep alive
+flask_app = Flask(__name__)
+
+@flask_app.route("/")
+def home():
+    return "✅ Quiz Bot is Live!"
+
+def run_flask():
+    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+threading.Thread(target=run_flask).start()
 
 # ✅ Load word dictionary
 with open("words.txt", "r", encoding="utf-8") as f:
@@ -149,7 +164,7 @@ async def end_game(client, message: Message):
     winner = max(scores, key=scores.get, default=None)
     if winner:
         user = await client.get_users(winner)
-        await message.reply(f"🏆 *Game Over!*\n\nCongratulations {user.first_name} 🎉 with {scores[winner]} points!")
+        await message.reply(f"\ud83c\udfc6 *Game Over!*\n\nCongratulations {user.first_name} \ud83c\udf89 with {scores[winner]} points!")
     else:
         await message.reply("Game khatam hua. Koi winner nahi bana.")
 
